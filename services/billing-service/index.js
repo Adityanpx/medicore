@@ -2,6 +2,9 @@ require('dotenv').config()
 const express   = require('express')
 const cors      = require('cors')
 const connectDB = require('./src/config/db')
+const logger     = require('./src/config/logger')
+const httpLogger = require('./src/config/httpLogger')
+const correlationIdMiddleware = require('./src/middleware/correlationId.middleware')
 const { connectRabbitMQ } = require('./src/config/rabbitmq')
 const { startConsumer }   = require('./src/consumers/appointment.consumer')
 const billingRoutes = require('./src/routes/billing.routes')
@@ -11,6 +14,8 @@ const PORT = process.env.PORT || 4005
 
 app.use(cors())
 app.use(express.json())
+app.use(correlationIdMiddleware)
+app.use(httpLogger)
 app.use('/api/billing', billingRoutes)
 
 app.get('/', (req, res) => {
@@ -22,8 +27,8 @@ const startServer = async () => {
   await connectRabbitMQ()
   await startConsumer()
   app.listen(PORT, () => {
-    console.log(`Billing Service running on port ${PORT}`)
-    console.log(`Billing Service listening for RabbitMQ events...`)
+    logger.info(`Billing Service started`, { port: PORT })
+    logger.info(`Billing Service listening for RabbitMQ events...`)
   })
 }
 

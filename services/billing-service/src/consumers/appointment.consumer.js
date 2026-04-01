@@ -1,5 +1,6 @@
 const { getChannel, EXCHANGE_NAME } = require('../config/rabbitmq')
-const Bill = require('../models/bill.model')
+const Bill   = require('../models/bill.model')
+const logger = require('../config/logger')
 
 const QUEUE_NAME = 'billing_queue'
 
@@ -16,48 +17,63 @@ const startConsumer = async () => {
     })
 
     await channel.bindQueue(QUEUE_NAME, EXCHANGE_NAME, '')
-
     channel.prefetch(1)
 
-    console.log('Billing Service: Waiting for events...')
+    logger.info('Billing consumer started — waiting for events')
 
     channel.consume(QUEUE_NAME, async (message) => {
       if (!message) return
 
+      let event
       try {
-        const event = JSON.parse(message.content.toString())
-        console.log(`Billing Service received event: ${event.eventType}`, {
-          eventId: event.eventId,
+        event = JSON.parse(message.content.toString())
+
+        const { correlationId, eventId, eventType, data } = event
+
+        logger.info('Event received from RabbitMQ', {
+          correlationId,
+          eventId,
+          eventType,
         })
 
-        if (event.eventType === 'appointment.completed') {
-          await handleAppointmentCompleted(event.data, event.eventId)
+        if (eventType === 'appointment.completed') {
+          await handleAppointmentCompleted(data, eventId, correlationId)
         }
 
         channel.ack(message)
-        console.log(`Event processed successfully: ${event.eventId}`)
+
+        logger.info('Event processed and acknowledged', {
+          correlationId,
+          eventId,
+        })
       } catch (error) {
-        console.error('Failed to process message:', error.message)
+        logger.error('Failed to process RabbitMQ message', {
+          correlationId: event?.correlationId,
+          eventId:       event?.eventId,
+          error:         error.message,
+          stack:         error.stack,
+        })
         channel.nack(message, false, false)
       }
     })
   } catch (error) {
-    console.error('Consumer setup failed:', error.message)
+    logger.error('Consumer setup failed — retrying in 5s', { error: error.message })
     setTimeout(startConsumer, 5000)
   }
 }
 
-const handleAppointmentCompleted = async (data, eventId) => {
-  const existingBill = await Bill.findOne({
-    appointmentId: data.appointmentId,
-  })
+const handleAppointmentCompleted = async (data, eventId, correlationId) => {
+  const existingBill = await Bill.findOne({ appointmentId: data.appointmentId })
 
   if (existingBill) {
-    console.log(`Bill already exists for appointment ${data.appointmentId} — skipping`)
+    logger.warn('Duplicate event — bill already exists', {
+      correlationId,
+      appointmentId: data.appointmentId,
+    })
     return
   }
 
-  const gst = Math.round(data.consultationFee * 0.18)
+  const gst         = Math.round(data.consultationFee * 0.18)
   const totalAmount = data.consultationFee + gst
 
   const bill = await Bill.create({
@@ -77,7 +93,14 @@ const handleAppointmentCompleted = async (data, eventId) => {
     sourceEventId:        eventId,
   })
 
-  console.log(`Bill generated automatically: ₹${totalAmount} for ${data.patientName}`)
+  logger.info('Bill generated automatically', {
+    correlationId,
+    billId:      bill._id,
+    patientName: data.patientName,
+    doctorName:  data.doctorName,
+    totalAmount,
+  })
+
   return bill
 }
 

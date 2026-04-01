@@ -1,61 +1,94 @@
 const Appointment = require('../models/appointment.model')
 const axios       = require('axios')
+const logger      = require('../config/logger')
 const { publishEvent } = require('../config/publisher')
 
-// Book appointment
-// This function demonstrates real synchronous inter-service communication
 const bookAppointment = async (req, res) => {
+  const { correlationId } = req
+
+  logger.info('Appointment booking request received', {
+    correlationId,
+    patientId: req.user.serviceId,
+    doctorId: req.body.doctorId,
+    date: req.body.date,
+  })
+
   try {
     const { doctorId, date, day, timeSlot, reason } = req.body
-
-    // req.user comes from auth middleware which called auth-service
     const patientId = req.user.serviceId
 
     if (!patientId) {
+      logger.warn('Booking failed — no patient profile', {
+        correlationId,
+        userId: req.user.id,
+      })
       return res.status(400).json({
         success: false,
         message: 'Patient profile not found. Please create your profile first.',
       })
     }
 
-    // ─── STEP 1: Call patient-service AND doctor-service simultaneously ───
-    // Promise.all fires both HTTP calls at the same time
-    // We don't wait for patient then wait for doctor — both happen together
-    // If either fails, the catch block handles it
+    logger.debug('Fetching patient and doctor data in parallel', {
+      correlationId,
+      patientId,
+      doctorId,
+    })
+
     let patientData, doctorData
 
     try {
       const [patientResponse, doctorResponse] = await Promise.all([
-        axios.get(`${process.env.PATIENT_SERVICE_URL}/api/patients/internal/${patientId}`),
-        axios.get(`${process.env.DOCTOR_SERVICE_URL}/api/doctors/internal/${doctorId}`),
+        axios.get(
+          `${process.env.PATIENT_SERVICE_URL}/api/patients/internal/${patientId}`,
+          { headers: { 'x-correlation-id': correlationId } }
+        ),
+        axios.get(
+          `${process.env.DOCTOR_SERVICE_URL}/api/doctors/internal/${doctorId}`,
+          { headers: { 'x-correlation-id': correlationId } }
+        ),
       ])
+
       patientData = patientResponse.data.patient
       doctorData  = doctorResponse.data.doctor
+
+      logger.debug('Patient and doctor data fetched successfully', {
+        correlationId,
+        patientName: patientData.name,
+        doctorName:  doctorData.name,
+      })
     } catch (serviceError) {
-      // If either service is down or returns 404
-      // we catch here and return a clear error
-      // appointment-service itself does NOT crash
+      logger.error('Failed to fetch patient or doctor data', {
+        correlationId,
+        error: serviceError.message,
+      })
       return res.status(503).json({
         success: false,
         message: 'Unable to verify patient or doctor details. Please try again.',
-        error: serviceError.message,
       })
     }
 
-    // ─── STEP 2: Check doctor availability for requested day ──────────────
+    // Check availability
     const availabilityResponse = await axios.get(
       `${process.env.DOCTOR_SERVICE_URL}/api/doctors/internal/availability`,
-      { params: { doctorId, day } }
+      {
+        params: { doctorId, day },
+        headers: { 'x-correlation-id': correlationId },
+      }
     )
 
     if (!availabilityResponse.data.isAvailable) {
+      logger.warn('Booking failed — doctor not available', {
+        correlationId,
+        doctorId,
+        day,
+      })
       return res.status(400).json({
         success: false,
         message: `Dr. ${doctorData.name} is not available on ${day}`,
       })
     }
 
-    // ─── STEP 3: Check for conflicting appointments ───────────────────────
+    // Check conflicts
     const existingAppointment = await Appointment.findOne({
       doctorId,
       date: new Date(date),
@@ -64,16 +97,18 @@ const bookAppointment = async (req, res) => {
     })
 
     if (existingAppointment) {
+      logger.warn('Booking failed — time slot conflict', {
+        correlationId,
+        doctorId,
+        date,
+        timeSlot,
+      })
       return res.status(400).json({
         success: false,
-        message: 'This time slot is already booked. Please choose another.',
+        message: 'This time slot is already booked.',
       })
     }
 
-    // ─── STEP 4: Create appointment with snapshot data ────────────────────
-    // We store patient name and doctor name directly in this document
-    // This is intentional — avoids calling other services every time
-    // someone fetches their appointments
     const appointment = await Appointment.create({
       patientId,
       doctorId,
@@ -81,16 +116,21 @@ const bookAppointment = async (req, res) => {
       doctorName:           doctorData.name,
       doctorSpecialization: doctorData.specialization,
       consultationFee:      doctorData.consultationFee,
-      date:                 new Date(date),
+      date: new Date(date),
       day,
       timeSlot,
       reason,
       status: 'confirmed',
     })
 
-    // In Phase 7 — after creating the appointment we will publish
-    // an event to RabbitMQ so billing-service can automatically
-    // generate a bill. For now we just return the appointment.
+    logger.info('Appointment booked successfully', {
+      correlationId,
+      appointmentId: appointment._id,
+      patientName:   patientData.name,
+      doctorName:    doctorData.name,
+      date,
+      timeSlot,
+    })
 
     res.status(201).json({
       success: true,
@@ -98,6 +138,11 @@ const bookAppointment = async (req, res) => {
       appointment,
     })
   } catch (error) {
+    logger.error('Appointment booking failed', {
+      correlationId,
+      error: error.message,
+      stack: error.stack,
+    })
     res.status(500).json({
       success: false,
       message: 'Failed to book appointment',
@@ -106,63 +151,76 @@ const bookAppointment = async (req, res) => {
   }
 }
 
-// Get my appointments — for patient
 const getMyAppointments = async (req, res) => {
-  try {
-    const patientId = req.user.serviceId
-    const appointments = await Appointment.find({ patientId })
-      .sort({ date: -1 })
+  const { correlationId } = req
+  const patientId = req.user.serviceId
 
+  logger.debug('Fetching patient appointments', { correlationId, patientId })
+
+  try {
+    const appointments = await Appointment.find({ patientId }).sort({ date: -1 })
+    logger.info('Patient appointments fetched', { correlationId, patientId, count: appointments.length })
     res.status(200).json({ success: true, count: appointments.length, appointments })
   } catch (error) {
+    logger.error('Failed to fetch patient appointments', { correlationId, error: error.message })
     res.status(500).json({ success: false, message: 'Failed to fetch appointments', error: error.message })
   }
 }
 
-// Get appointments for a doctor
 const getDoctorAppointments = async (req, res) => {
-  try {
-    // Find the doctor's serviceId from auth user
-    const doctorId = req.user.serviceId
-    const appointments = await Appointment.find({ doctorId })
-      .sort({ date: 1 })
+  const { correlationId } = req
+  const doctorId = req.user.serviceId
 
+  logger.debug('Fetching doctor appointments', { correlationId, doctorId })
+
+  try {
+    const appointments = await Appointment.find({ doctorId }).sort({ date: 1 })
+    logger.info('Doctor appointments fetched', { correlationId, doctorId, count: appointments.length })
     res.status(200).json({ success: true, count: appointments.length, appointments })
   } catch (error) {
+    logger.error('Failed to fetch doctor appointments', { correlationId, error: error.message })
     res.status(500).json({ success: false, message: 'Failed to fetch appointments', error: error.message })
   }
 }
 
-// Cancel appointment
 const cancelAppointment = async (req, res) => {
+  const { correlationId } = req
+  const { appointmentId } = req.params
+
+  logger.info('Cancel appointment request', { correlationId, appointmentId })
+
   try {
-    const { appointmentId } = req.params
     const appointment = await Appointment.findById(appointmentId)
 
     if (!appointment) {
+      logger.warn('Cancel failed — appointment not found', { correlationId, appointmentId })
       return res.status(404).json({ success: false, message: 'Appointment not found' })
     }
 
-    // Only the patient who booked can cancel
     if (appointment.patientId !== req.user.serviceId) {
+      logger.warn('Cancel failed — unauthorized', { correlationId, appointmentId })
       return res.status(403).json({ success: false, message: 'Not authorized to cancel this appointment' })
     }
 
     appointment.status = 'cancelled'
     await appointment.save()
 
+    logger.info('Appointment cancelled', { correlationId, appointmentId })
     res.status(200).json({ success: true, message: 'Appointment cancelled', appointment })
   } catch (error) {
+    logger.error('Failed to cancel appointment', { correlationId, error: error.message })
     res.status(500).json({ success: false, message: 'Failed to cancel appointment', error: error.message })
   }
 }
 
-// Complete appointment — doctor marks it done
 const completeAppointment = async (req, res) => {
-  try {
-    const { appointmentId } = req.params
-    const { notes } = req.body
+  const { correlationId } = req
+  const { appointmentId } = req.params
+  const { notes } = req.body
 
+  logger.info('Complete appointment request', { correlationId, appointmentId })
+
+  try {
     const appointment = await Appointment.findByIdAndUpdate(
       appointmentId,
       { status: 'completed', notes },
@@ -170,10 +228,10 @@ const completeAppointment = async (req, res) => {
     )
 
     if (!appointment) {
+      logger.warn('Complete failed — appointment not found', { correlationId, appointmentId })
       return res.status(404).json({ success: false, message: 'Appointment not found' })
     }
 
-    // Publish event to RabbitMQ
     publishEvent('appointment.completed', {
       appointmentId:   appointment._id,
       patientId:       appointment.patientId,
@@ -185,10 +243,12 @@ const completeAppointment = async (req, res) => {
       date:            appointment.date,
       timeSlot:        appointment.timeSlot,
       notes:           appointment.notes,
-    })
+    }, correlationId)
 
+    logger.info('Appointment completed and event published', { correlationId, appointmentId })
     res.status(200).json({ success: true, message: 'Appointment completed', appointment })
   } catch (error) {
+    logger.error('Failed to complete appointment', { correlationId, error: error.message })
     res.status(500).json({ success: false, message: 'Failed to complete appointment', error: error.message })
   }
 }

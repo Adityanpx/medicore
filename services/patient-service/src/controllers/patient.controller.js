@@ -1,17 +1,19 @@
 const Patient = require('../models/patient.model')
 const axios = require('axios')
+const logger = require('../config/logger')
 
-// Create patient profile — called right after registration
 const createProfile = async (req, res) => {
+  const { correlationId } = req
+
+  logger.info('Patient profile creation request', { correlationId, userId: req.user.id })
+
   try {
     const { name, email, dateOfBirth, gender, phone, address, bloodGroup } = req.body
-
-    // req.user comes from our auth middleware (which called auth-service)
     const userId = req.user.id
 
-    // Check if profile already exists
     const existingPatient = await Patient.findOne({ userId })
     if (existingPatient) {
+      logger.warn('Profile creation failed — profile already exists', { correlationId, userId })
       return res.status(400).json({
         success: false,
         message: 'Patient profile already exists',
@@ -19,115 +21,83 @@ const createProfile = async (req, res) => {
     }
 
     const patient = await Patient.create({
-      userId,
-      name,
-      email,
-      dateOfBirth,
-      gender,
-      phone,
-      address,
-      bloodGroup,
+      userId, name, email, dateOfBirth, gender, phone, address, bloodGroup,
     })
 
-    // Now tell auth-service about this patient's serviceId
-    // so auth-service can link the user to this profile
     await axios.patch(
       `${process.env.AUTH_SERVICE_URL}/api/auth/update-service-id`,
       { userId, serviceId: patient._id },
-      { headers: { Authorization: req.headers.authorization } }
+      {
+        headers: {
+          Authorization: req.headers.authorization,
+          'x-correlation-id': correlationId,
+        },
+      }
     )
 
-    res.status(201).json({
-      success: true,
-      message: 'Patient profile created',
-      patient,
-    })
+    logger.info('Patient profile created', { correlationId, patientId: patient._id, name })
+    res.status(201).json({ success: true, message: 'Patient profile created', patient })
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to create profile',
-      error: error.message,
-    })
+    logger.error('Patient profile creation failed', { correlationId, error: error.message })
+    res.status(500).json({ success: false, message: 'Failed to create profile', error: error.message })
   }
 }
 
-// Get my profile
 const getMyProfile = async (req, res) => {
+  const { correlationId } = req
+
   try {
     const patient = await Patient.findOne({ userId: req.user.id })
-
     if (!patient) {
-      return res.status(404).json({
-        success: false,
-        message: 'Patient profile not found',
-      })
+      logger.warn('Profile not found', { correlationId, userId: req.user.id })
+      return res.status(404).json({ success: false, message: 'Patient profile not found' })
     }
 
-    res.status(200).json({
-      success: true,
-      patient,
-    })
+    logger.debug('Patient profile fetched', { correlationId, patientId: patient._id })
+    res.status(200).json({ success: true, patient })
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch profile',
-      error: error.message,
-    })
+    logger.error('Failed to fetch patient profile', { correlationId, error: error.message })
+    res.status(500).json({ success: false, message: 'Failed to fetch profile', error: error.message })
   }
 }
 
-// Get patient by ID — called by other services like appointment-service
-// This is an internal endpoint
 const getPatientById = async (req, res) => {
+  const { correlationId } = req
+
+  logger.debug('Internal patient lookup', { correlationId, patientId: req.params.id })
+
   try {
     const patient = await Patient.findById(req.params.id)
-
     if (!patient) {
-      return res.status(404).json({
-        success: false,
-        message: 'Patient not found',
-      })
+      logger.warn('Patient not found', { correlationId, patientId: req.params.id })
+      return res.status(404).json({ success: false, message: 'Patient not found' })
     }
 
-    res.status(200).json({
-      success: true,
-      patient,
-    })
+    logger.debug('Patient found', { correlationId, patientId: patient._id, name: patient.name })
+    res.status(200).json({ success: true, patient })
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch patient',
-      error: error.message,
-    })
+    logger.error('Failed to fetch patient', { correlationId, error: error.message })
+    res.status(500).json({ success: false, message: 'Failed to fetch patient', error: error.message })
   }
 }
 
-// Update medical history
 const addMedicalHistory = async (req, res) => {
+  const { correlationId } = req
+
   try {
     const { condition, diagnosedAt, notes } = req.body
 
     const patient = await Patient.findOneAndUpdate(
       { userId: req.user.id },
-      {
-        $push: {
-          medicalHistory: { condition, diagnosedAt, notes },
-        },
-      },
+      { $push: { medicalHistory: { condition, diagnosedAt, notes } } },
       { new: true }
     )
 
-    res.status(200).json({
-      success: true,
-      message: 'Medical history updated',
-      patient,
-    })
+    logger.info('Medical history updated', { correlationId, userId: req.user.id, condition })
+    res.status(200).json({ success: true, message: 'Medical history updated', patient })
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update medical history',
-      error: error.message,
-    })
+    logger.error('Failed to update medical history', { correlationId, error: error.message })
+    res.status(500).json({ success: false, message: 'Failed to update medical history', error: error.message })
   }
 }
 

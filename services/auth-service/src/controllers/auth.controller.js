@@ -1,47 +1,57 @@
 const User = require('../models/user.model')
 const jwt = require('jsonwebtoken')
+const logger = require('../config/logger')
 
-// Generate JWT token
 const generateToken = (userId, role) => {
-  return jwt.sign(
-    { userId, role },
-    process.env.JWT_SECRET,
-    { expiresIn: '7d' }
-  )
+  return jwt.sign({ userId, role }, process.env.JWT_SECRET, { expiresIn: '7d' })
 }
 
-// REGISTER
 const register = async (req, res) => {
+  const { correlationId } = req
+
+  logger.info('Register request received', {
+    correlationId,
+    email: req.body.email,
+    role: req.body.role,
+  })
+
   try {
     const { name, email, password, role } = req.body
 
-    // Check if user already exists
     const existingUser = await User.findOne({ email })
     if (existingUser) {
+      logger.warn('Registration failed — email already exists', {
+        correlationId,
+        email,
+      })
       return res.status(400).json({
         success: false,
         message: 'Email already registered',
       })
     }
 
-    // Create user in auth database
     const user = await User.create({ name, email, password, role })
-
-    // Generate token
     const token = generateToken(user._id, user.role)
+
+    logger.info('User registered successfully', {
+      correlationId,
+      userId: user._id,
+      email: user.email,
+      role: user.role,
+    })
 
     res.status(201).json({
       success: true,
       message: 'Registration successful',
       token,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      },
+      user: { id: user._id, name: user.name, email: user.email, role: user.role },
     })
   } catch (error) {
+    logger.error('Registration failed with error', {
+      correlationId,
+      error: error.message,
+      stack: error.stack,
+    })
     res.status(500).json({
       success: false,
       message: 'Registration failed',
@@ -50,31 +60,40 @@ const register = async (req, res) => {
   }
 }
 
-// LOGIN
 const login = async (req, res) => {
+  const { correlationId } = req
+
+  logger.info('Login attempt', { correlationId, email: req.body.email })
+
   try {
     const { email, password } = req.body
 
-    // Find user
     const user = await User.findOne({ email })
     if (!user) {
+      logger.warn('Login failed — user not found', { correlationId, email })
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password',
       })
     }
 
-    // Check password
     const isPasswordValid = await user.comparePassword(password)
     if (!isPasswordValid) {
+      logger.warn('Login failed — wrong password', { correlationId, email })
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password',
       })
     }
 
-    // Generate token
     const token = generateToken(user._id, user.role)
+
+    logger.info('Login successful', {
+      correlationId,
+      userId: user._id,
+      email: user.email,
+      role: user.role,
+    })
 
     res.status(200).json({
       success: true,
@@ -89,6 +108,10 @@ const login = async (req, res) => {
       },
     })
   } catch (error) {
+    logger.error('Login failed with error', {
+      correlationId,
+      error: error.message,
+    })
     res.status(500).json({
       success: false,
       message: 'Login failed',
@@ -97,28 +120,33 @@ const login = async (req, res) => {
   }
 }
 
-// VERIFY TOKEN — called by other services to verify authentication
 const verifyToken = async (req, res) => {
+  const { correlationId } = req
+
+  logger.debug('Token verification request', { correlationId })
+
   try {
     const { token } = req.body
-
     if (!token) {
-      return res.status(400).json({
-        success: false,
-        message: 'Token is required',
-      })
+      return res.status(400).json({ success: false, message: 'Token is required' })
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET)
-
-    // Also fetch fresh user data
     const user = await User.findById(decoded.userId).select('-password')
+
     if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: 'User no longer exists',
+      logger.warn('Token valid but user not found', {
+        correlationId,
+        userId: decoded.userId,
       })
+      return res.status(401).json({ success: false, message: 'User no longer exists' })
     }
+
+    logger.debug('Token verified successfully', {
+      correlationId,
+      userId: user._id,
+      role: user.role,
+    })
 
     res.status(200).json({
       success: true,
@@ -131,25 +159,29 @@ const verifyToken = async (req, res) => {
       },
     })
   } catch (error) {
-    res.status(401).json({
-      success: false,
-      message: 'Invalid or expired token',
+    logger.warn('Token verification failed', {
+      correlationId,
+      error: error.message,
     })
+    res.status(401).json({ success: false, message: 'Invalid or expired token' })
   }
 }
 
-// UPDATE serviceId — called after patient/doctor profile is created
 const updateServiceId = async (req, res) => {
+  const { correlationId } = req
+  const { userId, serviceId } = req.body
+
+  logger.info('Updating serviceId', { correlationId, userId, serviceId })
+
   try {
-    const { userId, serviceId } = req.body
-
     await User.findByIdAndUpdate(userId, { serviceId })
-
-    res.status(200).json({
-      success: true,
-      message: 'ServiceId updated successfully',
-    })
+    logger.info('ServiceId updated', { correlationId, userId, serviceId })
+    res.status(200).json({ success: true, message: 'ServiceId updated successfully' })
   } catch (error) {
+    logger.error('Failed to update serviceId', {
+      correlationId,
+      error: error.message,
+    })
     res.status(500).json({
       success: false,
       message: 'Failed to update serviceId',

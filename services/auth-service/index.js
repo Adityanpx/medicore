@@ -1,29 +1,28 @@
 require('dotenv').config()
-const express = require('express')
-const cors = require('cors')
-const connectDB = require('./src/config/db')
+const express    = require('express')
+const cors       = require('cors')
+const connectDB  = require('./src/config/db')
+const logger     = require('./src/config/logger')
+const httpLogger = require('./src/config/httpLogger')
+const correlationIdMiddleware = require('./src/middleware/correlationId.middleware')
 const authRoutes = require('./src/routes/auth.routes')
 
-const app = express()
+const app  = express()
 const PORT = process.env.PORT || 4001
 
-// Middleware
 app.use(cors())
 app.use(express.json())
+app.use(correlationIdMiddleware)
+app.use(httpLogger)
 
-// Routes
-// Notice the prefix: /api/auth
-// Every route in this service starts with /api/auth
 app.use('/api/auth', authRoutes)
 
-// Root health check
 app.get('/', (req, res) => {
   res.json({ service: 'auth-service', status: 'running' })
 })
 
-// Connect to DB then start server
 connectDB().then(() => {
   app.listen(PORT, () => {
-    console.log(`Auth Service running on port ${PORT}`)
+    logger.info(`Auth Service started`, { port: PORT })
   })
 })
