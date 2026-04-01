@@ -1,5 +1,6 @@
 const Appointment = require('../models/appointment.model')
 const axios       = require('axios')
+const { publishEvent } = require('../config/publisher')
 
 // Book appointment
 // This function demonstrates real synchronous inter-service communication
@@ -172,9 +173,19 @@ const completeAppointment = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Appointment not found' })
     }
 
-    // Phase 7 — this is where we will publish
-    // an "appointment.completed" event to RabbitMQ
-    // so billing-service generates the bill automatically
+    // Publish event to RabbitMQ
+    publishEvent('appointment.completed', {
+      appointmentId:   appointment._id,
+      patientId:       appointment.patientId,
+      patientName:     appointment.patientName,
+      doctorId:        appointment.doctorId,
+      doctorName:      appointment.doctorName,
+      doctorSpecialization: appointment.doctorSpecialization,
+      consultationFee: appointment.consultationFee,
+      date:            appointment.date,
+      timeSlot:        appointment.timeSlot,
+      notes:           appointment.notes,
+    })
 
     res.status(200).json({ success: true, message: 'Appointment completed', appointment })
   } catch (error) {
