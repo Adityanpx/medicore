@@ -1,7 +1,11 @@
 const Appointment = require('../models/appointment.model')
-const axios       = require('axios')
 const logger      = require('../config/logger')
 const { publishEvent } = require('../config/publisher')
+const {
+  patientBreaker,
+  doctorBreaker,
+  availabilityBreaker,
+} = require('../config/circuitBreakers')
 
 const bookAppointment = async (req, res) => {
   const { correlationId } = req
@@ -9,8 +13,7 @@ const bookAppointment = async (req, res) => {
   logger.info('Appointment booking request received', {
     correlationId,
     patientId: req.user.serviceId,
-    doctorId: req.body.doctorId,
-    date: req.body.date,
+    doctorId:  req.body.doctorId,
   })
 
   try {
@@ -18,69 +21,63 @@ const bookAppointment = async (req, res) => {
     const patientId = req.user.serviceId
 
     if (!patientId) {
-      logger.warn('Booking failed — no patient profile', {
-        correlationId,
-        userId: req.user.id,
-      })
       return res.status(400).json({
         success: false,
         message: 'Patient profile not found. Please create your profile first.',
       })
     }
 
-    logger.debug('Fetching patient and doctor data in parallel', {
-      correlationId,
-      patientId,
-      doctorId,
+    logger.debug('Fetching patient and doctor via circuit breakers', {
+      correlationId, patientId, doctorId,
     })
 
-    let patientData, doctorData
+    const [patientResult, doctorResult] = await Promise.all([
+      patientBreaker.fire(patientId, correlationId),
+      doctorBreaker.fire(doctorId, correlationId),
+    ])
 
-    try {
-      const [patientResponse, doctorResponse] = await Promise.all([
-        axios.get(
-          `${process.env.PATIENT_SERVICE_URL}/api/patients/internal/${patientId}`,
-          { headers: { 'x-correlation-id': correlationId } }
-        ),
-        axios.get(
-          `${process.env.DOCTOR_SERVICE_URL}/api/doctors/internal/${doctorId}`,
-          { headers: { 'x-correlation-id': correlationId } }
-        ),
-      ])
-
-      patientData = patientResponse.data.patient
-      doctorData  = doctorResponse.data.doctor
-
-      logger.debug('Patient and doctor data fetched successfully', {
-        correlationId,
-        patientName: patientData.name,
-        doctorName:  doctorData.name,
-      })
-    } catch (serviceError) {
-      logger.error('Failed to fetch patient or doctor data', {
-        correlationId,
-        error: serviceError.message,
-      })
+    if (!patientResult) {
+      logger.error('Patient service circuit open — cannot book', { correlationId })
       return res.status(503).json({
         success: false,
-        message: 'Unable to verify patient or doctor details. Please try again.',
+        message: 'Patient service temporarily unavailable. Please try again shortly.',
+        retryAfter: '30 seconds',
       })
     }
 
-    // Check availability
-    const availabilityResponse = await axios.get(
-      `${process.env.DOCTOR_SERVICE_URL}/api/doctors/internal/availability`,
-      {
-        params: { doctorId, day },
-        headers: { 'x-correlation-id': correlationId },
-      }
+    if (!doctorResult) {
+      logger.error('Doctor service circuit open — cannot book', { correlationId })
+      return res.status(503).json({
+        success: false,
+        message: 'Doctor service temporarily unavailable. Please try again shortly.',
+        retryAfter: '30 seconds',
+      })
+    }
+
+    const patientData = patientResult.patient
+    const doctorData  = doctorResult.doctor
+
+    logger.debug('Patient and doctor fetched successfully', {
+      correlationId,
+      patientName: patientData.name,
+      doctorName:  doctorData.name,
+    })
+
+    // ─── Check availability using circuit breaker ─────────────────────
+    const availabilityResult = await availabilityBreaker.fire(
+      doctorId, day, correlationId
     )
 
-    if (!availabilityResponse.data.isAvailable) {
-      logger.warn('Booking failed — doctor not available', {
-        correlationId,
-        doctorId,
-        day,
+    if (availabilityResult.circuitOpen) {
+      return res.status(503).json({
+        success: false,
+        message: 'Unable to verify doctor availability. Please try again shortly.',
+      })
+    }
+
+    if (!availabilityResult.isAvailable) {
+      logger.warn('Doctor not available on requested day', {
+        correlationId, doctorId, day,
       })
       return res.status(400).json({
         success: false,
@@ -88,7 +85,7 @@ const bookAppointment = async (req, res) => {
       })
     }
 
-    // Check conflicts
+    // ─── Check slot conflict ──────────────────────────────────────────
     const existingAppointment = await Appointment.findOne({
       doctorId,
       date: new Date(date),
@@ -109,6 +106,7 @@ const bookAppointment = async (req, res) => {
       })
     }
 
+    // ─── Create appointment ───────────────────────────────────────────
     const appointment = await Appointment.create({
       patientId,
       doctorId,
@@ -123,13 +121,24 @@ const bookAppointment = async (req, res) => {
       status: 'confirmed',
     })
 
+    publishEvent('appointment.completed', {
+      appointmentId:        appointment._id,
+      patientId:            appointment.patientId,
+      patientName:          appointment.patientName,
+      doctorId:             appointment.doctorId,
+      doctorName:           appointment.doctorName,
+      doctorSpecialization: appointment.doctorSpecialization,
+      consultationFee:      appointment.consultationFee,
+      date:                 appointment.date,
+      timeSlot:             appointment.timeSlot,
+      notes:                appointment.notes,
+    }, correlationId)
+
     logger.info('Appointment booked successfully', {
       correlationId,
       appointmentId: appointment._id,
       patientName:   patientData.name,
       doctorName:    doctorData.name,
-      date,
-      timeSlot,
     })
 
     res.status(201).json({

@@ -69,6 +69,49 @@ app.use('/api/doctors',      createServiceProxy('Doctor',      process.env.DOCTO
 app.use('/api/appointments', createServiceProxy('Appointment', process.env.APPOINTMENT_SERVICE_URL))
 app.use('/api/billing',      createServiceProxy('Billing',     process.env.BILLING_SERVICE_URL))
 
+// Circuit breaker status endpoint
+app.get('/circuit-status', async (req, res) => {
+  const axios = require('axios')
+
+  const services = [
+    { name: 'auth-service',        url: process.env.AUTH_SERVICE_URL },
+    { name: 'patient-service',     url: process.env.PATIENT_SERVICE_URL },
+    { name: 'doctor-service',      url: process.env.DOCTOR_SERVICE_URL },
+    { name: 'appointment-service', url: process.env.APPOINTMENT_SERVICE_URL },
+    { name: 'billing-service',     url: process.env.BILLING_SERVICE_URL },
+  ]
+
+  const statusChecks = await Promise.allSettled(
+    services.map(async (service) => {
+      const start = Date.now()
+      try {
+        await axios.get(`${service.url}/health`, { timeout: 3000 })
+        return {
+          service: service.name,
+          status: 'healthy',
+          responseTime: `${Date.now() - start}ms`,
+        }
+      } catch (error) {
+        return {
+          service: service.name,
+          status: 'unhealthy',
+          responseTime: `${Date.now() - start}ms`,
+          error: error.message,
+        }
+      }
+    })
+  )
+
+  const results = statusChecks.map(r => r.value || r.reason)
+  const allHealthy = results.every(r => r.status === 'healthy')
+
+  res.status(allHealthy ? 200 : 207).json({
+    success: allHealthy,
+    timestamp: new Date().toISOString(),
+    services: results,
+  })
+})
+
 app.listen(PORT, () => {
   logger.info('API Gateway started', { port: PORT })
   logger.info('Routing configured', {

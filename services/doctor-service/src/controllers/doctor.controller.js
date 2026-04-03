@@ -1,6 +1,29 @@
 const Doctor = require('../models/doctor.model')
 const axios  = require('axios')
 const logger = require('../config/logger')
+const { createCircuitBreaker } = require('../config/circuitBreaker')
+
+const updateServiceIdRequest = async (userId, serviceId, token, correlationId) => {
+  const response = await axios.patch(
+    `${process.env.AUTH_SERVICE_URL}/api/auth/update-service-id`,
+    { userId, serviceId },
+    {
+      headers: {
+        Authorization: token,
+        'x-correlation-id': correlationId,
+      },
+      timeout: 5000,
+    }
+  )
+  return response.data
+}
+
+const updateServiceIdBreaker = createCircuitBreaker(
+  updateServiceIdRequest,
+  'auth-service-updateServiceId',
+  {},
+  () => ({ success: false, circuitOpen: true })
+)
 
 const createProfile = async (req, res) => {
   const { correlationId } = req
@@ -27,16 +50,16 @@ const createProfile = async (req, res) => {
       phone, availability,
     })
 
-    await axios.patch(
-      `${process.env.AUTH_SERVICE_URL}/api/auth/update-service-id`,
-      { userId, serviceId: doctor._id },
-      {
-        headers: {
-          Authorization: req.headers.authorization,
-          'x-correlation-id': correlationId,
-        },
-      }
+    const updateResult = await updateServiceIdBreaker.fire(
+      userId, doctor._id, req.headers.authorization, correlationId
     )
+
+    if (updateResult.circuitOpen) {
+      logger.warn('Auth service circuit open during profile creation — profile saved but serviceId sync delayed', {
+        correlationId,
+        doctorId: doctor._id,
+      })
+    }
 
     logger.info('Doctor profile created', { correlationId, doctorId: doctor._id, name })
     res.status(201).json({ success: true, message: 'Doctor profile created', doctor })

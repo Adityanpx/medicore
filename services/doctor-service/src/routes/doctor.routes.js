@@ -15,8 +15,9 @@ router.get('/profile/me',            protect, doctorOnly, getMyProfile)
 router.patch('/availability',        protect, doctorOnly, updateAvailability)
 
 // Internal — only called by other services
-router.get('/internal/:id',          getDoctorById)
+// /availability MUST come before /:id to prevent "availability" being treated as an ID
 router.get('/internal/availability', checkAvailability)
+router.get('/internal/:id',          getDoctorById)
 
 // Health check
 router.get('/health', (req, res) => {
