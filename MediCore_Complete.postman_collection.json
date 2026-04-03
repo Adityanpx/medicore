@@ -1,0 +1,610 @@
+{
+  "info": {
+    "name": "MediCore — Hospital Microservices (Complete)",
+    "description": "Complete test collection for MediCore. Run in order: Health Checks → Auth → Patient → Doctor → Appointments → Billing. Login requests auto-save tokens.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl",       "value": "http://localhost:3000", "type": "string" },
+    { "key": "patientToken",  "value": "", "type": "string" },
+    { "key": "doctorToken",   "value": "", "type": "string" },
+    { "key": "patientId",     "value": "", "type": "string" },
+    { "key": "doctorId",      "value": "", "type": "string" },
+    { "key": "appointmentId", "value": "", "type": "string" },
+    { "key": "billId",        "value": "", "type": "string" }
+  ],
+  "item": [
+
+    {
+      "name": "0. Health Checks",
+      "description": "Run these first. All should return 200 with status: healthy",
+      "item": [
+        {
+          "name": "Gateway Health",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] }
+          }
+        },
+        {
+          "name": "Auth Service Health",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/auth/health", "host": ["{{baseUrl}}"], "path": ["api","auth","health"] }
+          }
+        },
+        {
+          "name": "Patient Service Health",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/patients/health", "host": ["{{baseUrl}}"], "path": ["api","patients","health"] }
+          }
+        },
+        {
+          "name": "Doctor Service Health",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/doctors/health", "host": ["{{baseUrl}}"], "path": ["api","doctors","health"] }
+          }
+        },
+        {
+          "name": "Appointment Service Health",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/appointments/health", "host": ["{{baseUrl}}"], "path": ["api","appointments","health"] }
+          }
+        },
+        {
+          "name": "Billing Service Health",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/billing/health", "host": ["{{baseUrl}}"], "path": ["api","billing","health"] }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "1. Auth",
+      "description": "Register patient and doctor, then login both. Tokens are saved automatically.",
+      "item": [
+        {
+          "name": "Register Patient",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Rahul Sharma\",\n  \"email\": \"rahul@example.com\",\n  \"password\": \"password123\",\n  \"role\": \"patient\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/auth/register", "host": ["{{baseUrl}}"], "path": ["api","auth","register"] }
+          }
+        },
+        {
+          "name": "Register Doctor",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Dr. Priya Mehta\",\n  \"email\": \"priya@example.com\",\n  \"password\": \"password123\",\n  \"role\": \"doctor\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/auth/register", "host": ["{{baseUrl}}"], "path": ["api","auth","register"] }
+          }
+        },
+        {
+          "name": "Login Patient",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.token) {",
+                  "  pm.collectionVariables.set('patientToken', res.token);",
+                  "  console.log('Patient token saved automatically');",
+                  "}",
+                  "if (res.user && res.user.serviceId) {",
+                  "  pm.collectionVariables.set('patientId', res.user.serviceId);",
+                  "  console.log('Patient serviceId saved:', res.user.serviceId);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"rahul@example.com\",\n  \"password\": \"password123\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api","auth","login"] }
+          }
+        },
+        {
+          "name": "Login Doctor",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.token) {",
+                  "  pm.collectionVariables.set('doctorToken', res.token);",
+                  "  console.log('Doctor token saved automatically');",
+                  "}",
+                  "if (res.user && res.user.serviceId) {",
+                  "  pm.collectionVariables.set('doctorId', res.user.serviceId);",
+                  "  console.log('Doctor serviceId saved:', res.user.serviceId);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"priya@example.com\",\n  \"password\": \"password123\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api","auth","login"] }
+          }
+        },
+        {
+          "name": "Verify Token (Patient)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{patientToken}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/auth/verify-token", "host": ["{{baseUrl}}"], "path": ["api","auth","verify-token"] }
+          }
+        },
+        {
+          "name": "Verify Token (Doctor)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{doctorToken}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/auth/verify-token", "host": ["{{baseUrl}}"], "path": ["api","auth","verify-token"] }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "2. Patient",
+      "description": "Create patient profile first. serviceId gets saved automatically from login.",
+      "item": [
+        {
+          "name": "Create Patient Profile",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.patient && res.patient._id) {",
+                  "  pm.collectionVariables.set('patientId', res.patient._id);",
+                  "  console.log('patientId saved:', res.patient._id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{patientToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Rahul Sharma\",\n  \"email\": \"rahul@example.com\",\n  \"dateOfBirth\": \"1995-06-15\",\n  \"gender\": \"male\",\n  \"phone\": \"9876543210\",\n  \"bloodGroup\": \"O+\",\n  \"address\": {\n    \"street\": \"123 MG Road\",\n    \"city\": \"Pune\",\n    \"state\": \"Maharashtra\",\n    \"pincode\": \"411001\"\n  },\n  \"emergencyContact\": {\n    \"name\": \"Suresh Sharma\",\n    \"phone\": \"9876500000\",\n    \"relation\": \"Father\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/patients/profile", "host": ["{{baseUrl}}"], "path": ["api","patients","profile"] }
+          }
+        },
+        {
+          "name": "Get My Profile (Patient)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{patientToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/patients/profile/me", "host": ["{{baseUrl}}"], "path": ["api","patients","profile","me"] }
+          }
+        },
+        {
+          "name": "Add Medical History",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{patientToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"condition\": \"Diabetes Type 2\",\n  \"diagnosedAt\": \"2020-03-10\",\n  \"notes\": \"Controlled with metformin 500mg twice daily\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/patients/medical-history", "host": ["{{baseUrl}}"], "path": ["api","patients","medical-history"] }
+          }
+        },
+        {
+          "name": "Get Patient by ID (Internal Route)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/patients/internal/{{patientId}}", "host": ["{{baseUrl}}"], "path": ["api","patients","internal","{{patientId}}"] }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "3. Doctor",
+      "description": "Create doctor profile using doctor token. Must use doctorToken not patientToken.",
+      "item": [
+        {
+          "name": "Create Doctor Profile",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.doctor && res.doctor._id) {",
+                  "  pm.collectionVariables.set('doctorId', res.doctor._id);",
+                  "  console.log('doctorId saved:', res.doctor._id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{doctorToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Dr. Priya Mehta\",\n  \"email\": \"priya@example.com\",\n  \"specialization\": \"Cardiology\",\n  \"qualifications\": [\"MBBS\", \"MD\", \"DM Cardiology\"],\n  \"experience\": 10,\n  \"consultationFee\": 800,\n  \"phone\": \"9876501234\",\n  \"availability\": [\n    { \"day\": \"Monday\",    \"startTime\": \"09:00\", \"endTime\": \"17:00\", \"isAvailable\": true },\n    { \"day\": \"Wednesday\", \"startTime\": \"09:00\", \"endTime\": \"17:00\", \"isAvailable\": true },\n    { \"day\": \"Friday\",    \"startTime\": \"09:00\", \"endTime\": \"13:00\", \"isAvailable\": true }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/doctors/profile", "host": ["{{baseUrl}}"], "path": ["api","doctors","profile"] }
+          }
+        },
+        {
+          "name": "Get My Profile (Doctor)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{doctorToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/doctors/profile/me", "host": ["{{baseUrl}}"], "path": ["api","doctors","profile","me"] }
+          }
+        },
+        {
+          "name": "Get All Doctors (Public)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/doctors", "host": ["{{baseUrl}}"], "path": ["api","doctors"] }
+          }
+        },
+        {
+          "name": "Get All Doctors — Filter by Specialization",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/doctors?specialization=Cardiology",
+              "host": ["{{baseUrl}}"],
+              "path": ["api","doctors"],
+              "query": [{ "key": "specialization", "value": "Cardiology" }]
+            }
+          }
+        },
+        {
+          "name": "Update Availability",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{doctorToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"availability\": [\n    { \"day\": \"Monday\",    \"startTime\": \"09:00\", \"endTime\": \"17:00\", \"isAvailable\": true },\n    { \"day\": \"Tuesday\",   \"startTime\": \"10:00\", \"endTime\": \"16:00\", \"isAvailable\": true },\n    { \"day\": \"Wednesday\", \"startTime\": \"09:00\", \"endTime\": \"17:00\", \"isAvailable\": true },\n    { \"day\": \"Friday\",    \"startTime\": \"09:00\", \"endTime\": \"13:00\", \"isAvailable\": true }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/doctors/availability", "host": ["{{baseUrl}}"], "path": ["api","doctors","availability"] }
+          }
+        },
+        {
+          "name": "Get Doctor by ID (Internal Route)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/doctors/internal/{{doctorId}}", "host": ["{{baseUrl}}"], "path": ["api","doctors","internal","{{doctorId}}"] }
+          }
+        },
+        {
+          "name": "Check Doctor Availability (Internal Route)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/doctors/internal/availability?doctorId={{doctorId}}&day=Monday",
+              "host": ["{{baseUrl}}"],
+              "path": ["api","doctors","internal","availability"],
+              "query": [
+                { "key": "doctorId", "value": "{{doctorId}}" },
+                { "key": "day",      "value": "Monday" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "4. Appointments",
+      "description": "Book appointment as patient. Complete as doctor — this triggers RabbitMQ event and auto-generates a bill in billing-service.",
+      "item": [
+        {
+          "name": "Book Appointment (as Patient)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.appointment && res.appointment._id) {",
+                  "  pm.collectionVariables.set('appointmentId', res.appointment._id);",
+                  "  console.log('appointmentId saved:', res.appointment._id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{patientToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"doctorId\": \"{{doctorId}}\",\n  \"date\": \"2025-02-10\",\n  \"day\": \"Monday\",\n  \"timeSlot\": \"10:00 - 11:00\",\n  \"reason\": \"Chest pain and shortness of breath for 3 days\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/appointments/book", "host": ["{{baseUrl}}"], "path": ["api","appointments","book"] }
+          }
+        },
+        {
+          "name": "Get My Appointments (as Patient)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{patientToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/appointments/my", "host": ["{{baseUrl}}"], "path": ["api","appointments","my"] }
+          }
+        },
+        {
+          "name": "Get My Appointments (as Doctor)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{doctorToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/appointments/doctor", "host": ["{{baseUrl}}"], "path": ["api","appointments","doctor"] }
+          }
+        },
+        {
+          "name": "Complete Appointment (as Doctor) ← triggers billing",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.success) {",
+                  "  console.log('Appointment completed. Check billing-service terminal for auto-generated bill.');",
+                  "  console.log('Wait 2 seconds then run Get My Bills as patient.');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{doctorToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": \"Patient examined. ECG normal. Prescribed antacids and advised stress management. Follow up in 2 weeks.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/appointments/complete/{{appointmentId}}", "host": ["{{baseUrl}}"], "path": ["api","appointments","complete","{{appointmentId}}"] }
+          }
+        },
+        {
+          "name": "Cancel Appointment (as Patient)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{patientToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/appointments/cancel/{{appointmentId}}", "host": ["{{baseUrl}}"], "path": ["api","appointments","cancel","{{appointmentId}}"] }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "5. Billing",
+      "description": "Bills are created automatically by RabbitMQ events — you never create them manually. Run these AFTER completing an appointment.",
+      "item": [
+        {
+          "name": "Get My Bills (as Patient)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.bills && res.bills.length > 0) {",
+                  "  pm.collectionVariables.set('billId', res.bills[0]._id);",
+                  "  console.log('billId saved:', res.bills[0]._id);",
+                  "  console.log('Total bills found:', res.count);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{patientToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/billing/my", "host": ["{{baseUrl}}"], "path": ["api","billing","my"] }
+          }
+        },
+        {
+          "name": "Get Bill by ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{patientToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/billing/{{billId}}", "host": ["{{baseUrl}}"], "path": ["api","billing","{{billId}}"] }
+          }
+        },
+        {
+          "name": "Mark Bill as Paid",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{patientToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/billing/{{billId}}/pay", "host": ["{{baseUrl}}"], "path": ["api","billing","{{billId}}","pay"] }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "6. Observability Tests",
+      "description": "These requests test Phase 5 logging. Check terminals after each one for correlationId.",
+      "item": [
+        {
+          "name": "Check correlationId in Response Headers",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const correlationId = pm.response.headers.get('x-correlation-id');",
+                  "if (correlationId) {",
+                  "  console.log('SUCCESS — correlationId found in response headers:', correlationId);",
+                  "  console.log('Search this ID across all service terminals to trace the request');",
+                  "} else {",
+                  "  console.log('FAIL — x-correlation-id header missing. Check correlationId middleware.');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"rahul@example.com\",\n  \"password\": \"password123\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api","auth","login"] }
+          }
+        },
+        {
+          "name": "Intentional 404 — Check Error Logging",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const correlationId = pm.response.headers.get('x-correlation-id');",
+                  "console.log('correlationId:', correlationId);",
+                  "console.log('Check billing-service terminal for warn log with this correlationId');",
+                  "console.log('Expected: Bill not found warning log');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{patientToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/billing/000000000000000000000000", "host": ["{{baseUrl}}"], "path": ["api","billing","000000000000000000000000"] }
+          }
+        },
+        {
+          "name": "Wrong Password — Check Warn Logging",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const correlationId = pm.response.headers.get('x-correlation-id');",
+                  "console.log('correlationId:', correlationId);",
+                  "console.log('Check auth-service terminal for: Login failed — wrong password');",
+                  "console.log('Log level should be WARN not ERROR');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"rahul@example.com\",\n  \"password\": \"wrongpassword\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api","auth","login"] }
+          }
+        }
+      ]
+    }
+
+  ]
+}
